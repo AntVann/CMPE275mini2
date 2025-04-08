@@ -1,0 +1,62 @@
+syntax = "proto3";
+
+package basecamp;
+
+// Service definition for Basecamp
+service BasecampService {
+  // Simple RPC for sending a message
+  rpc SendMessage (MessageRequest) returns (MessageResponse) {}
+  
+  // Server streaming RPC for receiving updates
+  rpc SubscribeToUpdates (SubscriptionRequest) returns (stream UpdateResponse) {}
+  
+  // Client streaming RPC for sending multiple messages
+  rpc SendMultipleMessages (stream MessageRequest) returns (BatchResponse) {}
+  
+  // Bidirectional streaming RPC for continuous communication
+  rpc Chat (stream ChatMessage) returns (stream ChatMessage) {}
+}
+
+// Message request containing sender, receiver, and content
+message MessageRequest {
+  string sender_id = 1;
+  string receiver_id = 2;
+  string content = 3;
+  int64 timestamp = 4;
+}
+
+// Response to a message request
+message MessageResponse {
+  bool success = 1;
+  string message_id = 2;
+  int64 timestamp = 3;
+  string error_message = 4;
+}
+
+// Request to subscribe to updates
+message SubscriptionRequest {
+  string subscriber_id = 1;
+  repeated string topics = 2;
+}
+
+// Update response for subscribed clients
+message UpdateResponse {
+  string topic = 1;
+  string content = 2;
+  int64 timestamp = 3;
+}
+
+// Response to a batch of messages
+message BatchResponse {
+  int32 success_count = 1;
+  int32 failure_count = 2;
+  repeated string message_ids = 3;
+  string error_message = 4;
+}
+
+// Chat message for bidirectional streaming
+message ChatMessage {
+  string sender_id = 1;
+  string content = 2;
+  int64 timestamp = 3;
+}
