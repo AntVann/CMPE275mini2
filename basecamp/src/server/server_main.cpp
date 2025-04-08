@@ -94,7 +94,9 @@ private:
                 status_ = PROCESS;
                 
                 // Request a new RPC
-                service_->RequestSendMessage(&ctx_, &request_, &responder_, cq_, cq_, this);
+                // Use the same completion queue for both new calls and notifications
+                grpc::ServerCompletionQueue* notification_cq = static_cast<grpc::ServerCompletionQueue*>(cq_);
+                service_->RequestSendMessage(&ctx_, &request_, &responder_, cq_, notification_cq, this);
             } else if (status_ == PROCESS) {
                 // Create a new CallData instance for the next request
                 new CallData(service_, cq_);

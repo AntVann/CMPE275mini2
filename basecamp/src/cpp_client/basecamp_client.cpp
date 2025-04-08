@@ -84,8 +84,9 @@ bool BasecampClient::SubscribeToUpdates(
     // Create a context
     auto context = std::make_shared<grpc::ClientContext>();
     
-    // Create a reader
-    auto reader = stub_->SubscribeToUpdates(context.get(), request);
+    // Create a reader and store it in a shared_ptr so it can be captured by the lambda
+    auto reader = std::shared_ptr<grpc::ClientReader<UpdateResponse>>(
+        stub_->SubscribeToUpdates(context.get(), request).release());
     
     // Start a thread to read updates
     subscription_thread_ = std::make_unique<std::thread>([this, reader, callback, context]() {
@@ -113,8 +114,12 @@ bool BasecampClient::SendMultipleMessages(
     // Create a context
     grpc::ClientContext context;
     
+    // Create a local response if none was provided
+    BatchResponse local_response;
+    BatchResponse* response_ptr = response ? response : &local_response;
+    
     // Create a writer
-    auto writer = stub_->SendMultipleMessages(&context, response ? *response : BatchResponse());
+    auto writer = stub_->SendMultipleMessages(&context, response_ptr);
     
     // Send each message
     for (const auto& message : messages) {
@@ -145,8 +150,9 @@ bool BasecampClient::StartChat(
     // Create a context
     auto context = std::make_shared<grpc::ClientContext>();
     
-    // Create a stream
-    auto stream = stub_->Chat(context.get());
+    // Create a stream and store it in a shared_ptr so it can be captured by the lambda
+    auto stream = std::shared_ptr<grpc::ClientReaderWriter<ChatMessage, ChatMessage>>(
+        stub_->Chat(context.get()).release());
     
     // Start a thread to handle the chat
     chat_thread_ = std::make_unique<std::thread>([this, stream, sender_id, receive_callback, get_next_message, context]() {
