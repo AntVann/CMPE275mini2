@@ -131,29 +131,69 @@ ctest -R basecamp_integration_tests
 
 To deploy the system across multiple computers:
 
-1. Build the server and client components on each computer.
-2. Start the server on the designated server computers with appropriate IP addresses.
-3. Configure the clients to connect to the server addresses.
+1. Build the server and client components on each computer using the build script:
+   ```bash
+   python scripts/build.py
+   ```
 
-For example, to set up the overlay configuration described in the requirements (AB, BC, BD, CE, and DE, where {A,B} are on computer 1 and {C,D,E} are on computer 2):
+2. Find the IP address of each computer using the provided script:
+   ```bash
+   python scripts/get_ip.py
+   ```
+   This will display the IP address that should be used as the `--remote-ip` parameter when running the setup script on the other computer.
+
+   If the script shows an incorrect IP address (e.g., if you have multiple network interfaces), you can run:
+   ```bash
+   python scripts/get_ip.py --all
+   ```
+   This will display all available IP addresses, and you can choose the correct one.
+
+3. Use the setup script to start all processes according to the overlay configuration:
+
+   On computer 1:
+   ```bash
+   python scripts/setup_overlay.py --computer 1 --remote-ip <computer2-ip>
+   ```
+
+   On computer 2:
+   ```bash
+   python scripts/setup_overlay.py --computer 2 --remote-ip <computer1-ip>
+   ```
+
+   The setup script will automatically start all the necessary processes with the correct configuration:
+   - On computer 1: processes A and B
+   - On computer 2: processes C, D, and E
+
+   The overlay configuration will be set up as described in the requirements:
+   - AB: Process B on computer 1 connects to process A on computer 1
+   - BC: Process C on computer 2 connects to process B on computer 1
+   - BD: Process D on computer 2 connects to process B on computer 1
+   - CE: Process E on computer 2 connects to process C on computer 2
+   - DE: Process E on computer 2 connects to process D on computer 2
+
+4. To stop all processes, press Ctrl+C in the terminal where the setup script is running.
+
+### Manual Deployment (Alternative)
+
+If you prefer to start each process manually instead of using the setup script, you can do so as follows:
 
 1. On computer 1:
-   - Start process A as a server: `./basecamp_server --address 0.0.0.0:50051`
+   - Start process A as a server: `./build/src/server/basecamp_server --address 0.0.0.0:50051`
    - Start process B as both a server and client:
-     - As a server: `./basecamp_server --address 0.0.0.0:50052`
-     - As a client connecting to A: `./basecamp_client --address localhost:50051`
+     - As a server: `./build/src/server/basecamp_server --address 0.0.0.0:50052`
+     - As a client connecting to A: `./build/src/cpp_client/basecamp_client --address localhost:50051`
 
 2. On computer 2:
    - Start process C as both a server and client:
-     - As a server: `./basecamp_server --address 0.0.0.0:50053`
-     - As a client connecting to B: `./basecamp_client --address <computer1-ip>:50052`
+     - As a server: `./build/src/server/basecamp_server --address 0.0.0.0:50053`
+     - As a client connecting to B: `./build/src/cpp_client/basecamp_client --address <computer1-ip>:50052`
    - Start process D as both a server and client:
-     - As a server: `./basecamp_server --address 0.0.0.0:50054`
-     - As a client connecting to B: `./basecamp_client --address <computer1-ip>:50052`
+     - As a server: `./build/src/server/basecamp_server --address 0.0.0.0:50054`
+     - As a client connecting to B: `./build/src/cpp_client/basecamp_client --address <computer1-ip>:50052`
    - Start process E as both a server and client:
-     - As a server: `./basecamp_server --address 0.0.0.0:50055`
-     - As a client connecting to C: `./basecamp_client --address localhost:50053`
-     - As a client connecting to D: `./basecamp_client --address localhost:50054`
+     - As a server: `./build/src/server/basecamp_server --address 0.0.0.0:50055`
+     - As a client connecting to C: `./build/src/cpp_client/basecamp_client --address localhost:50053`
+     - As a client connecting to D: `./build/src/cpp_client/basecamp_client --address localhost:50054`
 
 ## License
 
