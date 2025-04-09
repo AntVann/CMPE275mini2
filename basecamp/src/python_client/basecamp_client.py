@@ -23,6 +23,7 @@ class BasecampClient:
         self.running = True
         self.subscription_thread = None
         self.chat_thread = None
+        self.query_thread = None
 
     def __del__(self):
         """Clean up resources when the client is destroyed."""
@@ -31,6 +32,8 @@ class BasecampClient:
             self.subscription_thread.join()
         if self.chat_thread:
             self.chat_thread.join()
+        if self.query_thread:
+            self.query_thread.join()
         self.channel.close()
 
     def send_message(self, sender_id, receiver_id, content):
@@ -146,6 +149,48 @@ class BasecampClient:
         self.chat_thread.start()
         return True
 
+    def query_data(
+        self,
+        query_id,
+        client_id,
+        query_type="exact",
+        key=None,
+        range_start=None,
+        range_end=None,
+    ):
+        """Query data from the server."""
+        # Create a query request
+        request = basecamp_pb2.QueryRequest(
+            query_id=query_id, client_id=client_id, timestamp=int(time.time() * 1000)
+        )
+
+        # Set the query type and parameters
+        request.query_type = query_type
+        if query_type == "exact" and key is not None:
+            request.key = key
+        elif (
+            query_type == "range" and range_start is not None and range_end is not None
+        ):
+            request.range_start = range_start
+            request.range_end = range_end
+
+        try:
+            # Send the query
+            response = self.stub.QueryData(request, timeout=self.timeout * 2)
+
+            if response.success:
+                print(f"Query successful with {len(response.results)} results")
+                if response.from_cache:
+                    print("Results served from cache")
+                print(f"Processing time: {response.processing_time} ms")
+            else:
+                print(f"Query failed: {response.error_message}")
+
+            return response
+        except grpc.RpcError as e:
+            print(f"Error querying data: {e}")
+            return None
+
 
 def main():
     """Main function to demonstrate the client."""
@@ -166,7 +211,8 @@ def main():
         print("2. Subscribe to updates")
         print("3. Send multiple messages")
         print("4. Start a chat session")
-        print("5. Exit")
+        print("5. Query data")
+        print("6. Exit")
         choice = input("Enter your choice: ")
 
         if choice == "1":
@@ -228,6 +274,50 @@ def main():
             print("Chat session started successfully")
             print("Enter messages (empty line to exit)")
         elif choice == "5":
+            # Query data
+            query_id = f"query_{int(time.time())}"
+            client_id = input("Enter client ID: ")
+
+            print("Query types:")
+            print("1. Exact key query")
+            print("2. Range query")
+            print("3. All data query")
+            query_type_choice = input("Enter query type (1-3): ")
+
+            if query_type_choice == "1":
+                query_type = "exact"
+                key = int(input("Enter key to query: "))
+                response = client.query_data(query_id, client_id, query_type, key=key)
+            elif query_type_choice == "2":
+                query_type = "range"
+                range_start = int(input("Enter range start: "))
+                range_end = int(input("Enter range end: "))
+                response = client.query_data(
+                    query_id,
+                    client_id,
+                    query_type,
+                    range_start=range_start,
+                    range_end=range_end,
+                )
+            elif query_type_choice == "3":
+                query_type = "all"
+                response = client.query_data(query_id, client_id, query_type)
+            else:
+                print("Invalid query type")
+                continue
+
+            if response:
+                print(f"Results ({len(response.results)} items):")
+                for i, item in enumerate(response.results[:10]):
+                    print(
+                        f"  {i}: Key={item.key}, Value={item.value}, Source={item.source_node}"
+                    )
+
+                if len(response.results) > 10:
+                    print(f"  ... and {len(response.results) - 10} more")
+
+            input("Press enter to return to the menu...")
+        elif choice == "6":
             # Exit
             print("Exiting...")
             break

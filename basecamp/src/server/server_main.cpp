@@ -16,8 +16,8 @@ using grpc::Status;
 // Class to handle asynchronous server operations
 class AsyncBasecampServer {
 public:
-    AsyncBasecampServer(const std::string& server_address)
-        : server_address_(server_address), shutdown_(false) {}
+    AsyncBasecampServer(const std::string& server_address, const std::string& node_id, const std::string& config_path)
+        : server_address_(server_address), node_id_(node_id), config_path_(config_path), shutdown_(false), service_(node_id, config_path) {}
 
     ~AsyncBasecampServer() {
         Shutdown();
@@ -138,6 +138,8 @@ private:
     };
 
     std::string server_address_;
+    std::string node_id_;
+    std::string config_path_;
     basecamp::BasecampServiceImpl service_;
     std::unique_ptr<Server> server_;
     std::unique_ptr<grpc::ServerCompletionQueue> cq_;
@@ -146,19 +148,28 @@ private:
 };
 
 int main(int argc, char** argv) {
-    // Default server address
+    // Default values
     std::string server_address = "0.0.0.0:50051";
+    std::string node_id = "A";
+    std::string config_path = "../configs/topology.json";
     
     // Parse command line arguments
     for (int i = 1; i < argc; i++) {
         std::string arg = argv[i];
         if (arg == "--address" && i + 1 < argc) {
             server_address = argv[++i];
+        } else if (arg == "--node-id" && i + 1 < argc) {
+            node_id = argv[++i];
+        } else if (arg == "--config" && i + 1 < argc) {
+            config_path = argv[++i];
         }
     }
     
+    std::cout << "Starting server with node ID: " << node_id << std::endl;
+    std::cout << "Using config file: " << config_path << std::endl;
+    
     // Create and start the server
-    AsyncBasecampServer server(server_address);
+    AsyncBasecampServer server(server_address, node_id, config_path);
     server.Start();
     
     // Wait for the server to shutdown

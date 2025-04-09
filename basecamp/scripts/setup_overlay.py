@@ -3,8 +3,8 @@
 """
 Script to help set up the overlay configuration for Basecamp.
 
-This script helps set up the overlay configuration described in the requirements:
-AB, BC, BD, CE, and DE, where {A,B} are on computer 1 and {C,D,E} are on computer 2.
+This script reads the overlay configuration from a JSON file and sets up the processes
+according to the configuration.
 """
 
 import argparse
@@ -14,25 +14,22 @@ import time
 import os
 import signal
 import threading
+import json
 from typing import List, Dict, Optional
-
-# Define the processes and their connections
-PROCESSES = {
-    "A": {"computer": 1, "port": 50051, "connects_to": []},
-    "B": {"computer": 1, "port": 50052, "connects_to": ["A"]},
-    "C": {"computer": 2, "port": 50053, "connects_to": ["B"]},
-    "D": {"computer": 2, "port": 50054, "connects_to": ["B"]},
-    "E": {"computer": 2, "port": 50055, "connects_to": ["C", "D"]},
-}
 
 # Store the running processes
 running_processes: Dict[str, subprocess.Popen] = {}
 stop_event = threading.Event()
 
 
-def get_server_command(process_id: str, ip: str) -> List[str]:
+def get_server_command(process_id: str, ip: str, config_path: str) -> List[str]:
     """Get the command to start a server process."""
-    process = PROCESSES[process_id]
+    # Load the configuration
+    with open(config_path, "r") as f:
+        config = json.load(f)
+
+    # Get the process configuration
+    process = config["nodes"][process_id]
     port = process["port"]
 
     # Determine the path to the server executable
@@ -71,13 +68,20 @@ def get_server_command(process_id: str, ip: str) -> List[str]:
     return [server_path, "--address", f"{ip}:{port}"]
 
 
-def get_client_command(process_id: str, connect_to: str, ip: str) -> List[str]:
+def get_client_command(
+    process_id: str, connect_to: str, ip: str, config_path: str
+) -> List[str]:
     """Get the command to start a client process connecting to another process."""
-    connect_process = PROCESSES[connect_to]
+    # Load the configuration
+    with open(config_path, "r") as f:
+        config = json.load(f)
+
+    # Get the process configurations
+    process = config["nodes"][process_id]
+    connect_process = config["nodes"][connect_to]
+
     connect_ip = (
-        ip
-        if connect_process["computer"] == PROCESSES[process_id]["computer"]
-        else args.remote_ip
+        ip if connect_process["computer"] == process["computer"] else args.remote_ip
     )
     connect_port = connect_process["port"]
 
@@ -122,16 +126,21 @@ def get_client_command(process_id: str, connect_to: str, ip: str) -> List[str]:
     return [client_path, "--address", f"{connect_ip}:{connect_port}"]
 
 
-def start_process(process_id: str, computer: int, ip: str) -> None:
+def start_process(process_id: str, computer: int, ip: str, config_path: str) -> None:
     """Start a process (server and clients if needed)."""
-    process = PROCESSES[process_id]
+    # Load the configuration
+    with open(config_path, "r") as f:
+        config = json.load(f)
+
+    # Get the process configuration
+    process = config["nodes"][process_id]
 
     # Only start processes for the specified computer
     if process["computer"] != computer:
         return
 
     # Start the server
-    server_cmd = get_server_command(process_id, ip)
+    server_cmd = get_server_command(process_id, ip, config_path)
     print(f"Starting server for process {process_id}: {' '.join(server_cmd)}")
 
     server_process = subprocess.Popen(
@@ -154,7 +163,7 @@ def start_process(process_id: str, computer: int, ip: str) -> None:
 
     # Start clients to connect to other processes
     for connect_to in process["connects_to"]:
-        client_cmd = get_client_command(process_id, connect_to, ip)
+        client_cmd = get_client_command(process_id, connect_to, ip, config_path)
         print(
             f"Starting client for process {process_id} connecting to {connect_to}: {' '.join(client_cmd)}"
         )
@@ -266,6 +275,11 @@ def main() -> None:
     parser.add_argument(
         "--remote-ip", required=True, help="IP address of the remote computer"
     )
+    parser.add_argument(
+        "--config",
+        default="../configs/topology.json",
+        help="Path to the configuration file (default: ../configs/topology.json)",
+    )
 
     args = parser.parse_args()
 
@@ -273,10 +287,14 @@ def main() -> None:
     copy_dlls_if_needed()
 
     try:
+        # Load the configuration
+        with open(args.config, "r") as f:
+            config = json.load(f)
+
         # Start processes for the specified computer
-        for process_id, process in PROCESSES.items():
+        for process_id, process in config["nodes"].items():
             if process["computer"] == args.computer:
-                start_process(process_id, args.computer, args.ip)
+                start_process(process_id, args.computer, args.ip, args.config)
 
         print("\nAll processes started. Press Ctrl+C to stop.\n")
 

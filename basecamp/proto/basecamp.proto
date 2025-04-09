@@ -15,6 +15,12 @@ service BasecampService {
   
   // Bidirectional streaming RPC for continuous communication
   rpc Chat (stream ChatMessage) returns (stream ChatMessage) {}
+  
+  // Query RPC for data retrieval across the network
+  rpc QueryData (QueryRequest) returns (QueryResponse) {}
+  
+  // Internal RPC for peer-to-peer data gathering (used between nodes)
+  rpc GatherData (DataRequest) returns (DataResponse) {}
 }
 
 // Message request containing sender, receiver, and content
@@ -59,4 +65,82 @@ message ChatMessage {
   string sender_id = 1;
   string content = 2;
   int64 timestamp = 3;
+}
+
+// Query request for data retrieval
+message QueryRequest {
+  string query_id = 1;
+  string client_id = 2;
+  int32 key = 3;
+  string query_type = 4;  // "exact", "range", "all"
+  int32 range_start = 5;  // Used for range queries
+  int32 range_end = 6;    // Used for range queries
+  int64 timestamp = 7;
+}
+
+// Query response with results
+message QueryResponse {
+  string query_id = 1;
+  bool success = 2;
+  repeated DataItem results = 3;
+  string error_message = 4;
+  int64 timestamp = 5;
+  int64 processing_time = 6;  // Time taken to process the query in milliseconds
+  bool from_cache = 7;        // Indicates if the result was served from cache
+}
+
+// Data item representing a more complex data structure
+message DataItem {
+  int32 key = 1;
+  oneof value_type {
+    string string_value = 2;
+    double double_value = 3;
+    bool bool_value = 4;
+    NestedObject object_value = 5;
+    bytes binary_value = 6;
+  }
+  string source_node = 7;  // The node that provided this data item
+  int64 timestamp = 8;
+  string data_type = 9;    // Type of data (e.g., "user", "product", "transaction")
+  map<string, string> metadata = 10;  // Additional metadata about the data item
+}
+
+// Nested object for complex data structures
+message NestedObject {
+  string name = 1;
+  repeated string tags = 2;
+  map<string, string> properties = 3;
+  int64 created_at = 4;
+  int64 updated_at = 5;
+}
+
+// Internal request for gathering data from peers
+message DataRequest {
+  string request_id = 1;
+  string requester_id = 2;
+  int32 key = 3;
+  string query_type = 4;  // "exact", "range", "all"
+  int32 range_start = 5;  // Used for range queries
+  int32 range_end = 6;    // Used for range queries
+  int64 timestamp = 7;
+  int32 hop_count = 8;    // Number of hops this request has made
+  int32 max_hops = 9;     // Maximum number of hops allowed
+  string route_path = 10; // Path the request has taken (e.g., "A->B->C")
+  bool forward_to_peers = 11; // Whether to forward this request to peers
+  repeated string visited_nodes = 12; // Nodes that have already processed this request
+  map<string, string> query_context = 13; // Additional context for the query
+}
+
+// Internal response with gathered data
+message DataResponse {
+  string request_id = 1;
+  bool success = 2;
+  repeated DataItem data_items = 3;
+  string error_message = 4;
+  int64 timestamp = 5;
+  string responder_id = 6;  // ID of the node responding
+  string route_path = 7;    // Path the response has taken
+  int64 processing_time = 8; // Time taken to process the request in milliseconds
+  map<string, string> response_context = 9; // Additional context for the response
+  repeated string contributing_nodes = 10; // Nodes that contributed to this response
 }

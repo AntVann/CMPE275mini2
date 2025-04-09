@@ -25,6 +25,8 @@ target_link_libraries(basecamp_client
     ${Protobuf_LIBRARIES}
     gRPC::grpc++
     Threads::Threads
+    ${Boost_LIBRARIES}
+    nlohmann_json::nlohmann_json
 )
 
 # Add the generated protobuf and gRPC files

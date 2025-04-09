@@ -12,6 +12,10 @@ Basecamp is a distributed system consisting of multiple processes (A, B, C, D, E
   - Server streaming RPC (SubscribeToUpdates)
   - Client streaming RPC (SendMultipleMessages)
   - Bidirectional streaming RPC (Chat)
+  - Query RPC (QueryData) for distributed data retrieval
+- Shared memory for efficient data storage and retrieval
+- Caching mechanism for query results
+- Dynamic overlay configuration from JSON file
 - CMake build system for C++ components
 - Unit and integration testing
 
@@ -20,6 +24,8 @@ Basecamp is a distributed system consisting of multiple processes (A, B, C, D, E
 ```
 basecamp/
 ├── cmake/                  # CMake modules and configuration
+├── configs/                # Configuration files
+│   └── topology.json       # Overlay network configuration
 ├── include/                # Header files
 ├── src/                    # Source files
 │   ├── server/             # C++ server implementation
@@ -39,6 +45,8 @@ basecamp/
 - C++17 compatible compiler (GCC 7+, Clang 5+, MSVC 2017+)
 - CMake 3.10 or higher
 - gRPC and Protocol Buffers
+- Boost libraries (for shared memory and interprocess communication)
+- nlohmann/json (for JSON parsing)
 - Google Test (for running tests)
 
 ### For Python Client
@@ -89,10 +97,13 @@ python generate_proto.py
 ### Running the Server
 
 ```bash
-./build/src/server/basecamp_server [--address <address>]
+./build/src/server/basecamp_server [--address <address>] [--node-id <node-id>] [--config <config-path>]
 ```
 
-By default, the server listens on `0.0.0.0:50051`.
+Parameters:
+- `--address`: The address to listen on (default: `0.0.0.0:50051`)
+- `--node-id`: The ID of this node in the overlay network (default: `A`)
+- `--config`: Path to the configuration file (default: `../configs/topology.json`)
 
 ### Running the C++ Client
 
@@ -127,6 +138,36 @@ cd build
 ctest -R basecamp_integration_tests
 ```
 
+## Testing Communication
+
+You can use the `test_communication.py` script to test communication between processes:
+
+```bash
+python scripts/test_communication.py <server-address> [--test <test-type>]
+```
+
+Parameters:
+- `server-address`: The address of the server to test (e.g., `127.0.0.1:50051`)
+- `--test`: The type of test to run (choices: `send`, `subscribe`, `multiple`, `chat`, `query`, `all`; default: `all`)
+
+For query tests, additional parameters are available:
+- `--query-type`: The type of query to run (choices: `exact`, `range`, `all`; default: `exact`)
+- `--key`: The key to query (for exact queries)
+- `--range-start`: The start of the range (for range queries)
+- `--range-end`: The end of the range (for range queries)
+
+Example:
+```bash
+# Test all communication types
+python scripts/test_communication.py 127.0.0.1:50051
+
+# Test only query functionality with an exact key query
+python scripts/test_communication.py 127.0.0.1:50051 --test query --query-type exact --key 42
+
+# Test only query functionality with a range query
+python scripts/test_communication.py 127.0.0.1:50051 --test query --query-type range --range-start 100 --range-end 200
+```
+
 ## Deployment
 
 To deploy the system across multiple computers:
@@ -152,26 +193,98 @@ To deploy the system across multiple computers:
 
    On computer 1:
    ```bash
-   python scripts/setup_overlay.py --computer 1 --remote-ip <computer2-ip>
+   python scripts/setup_overlay.py --computer 1 --remote-ip <computer2-ip> [--config <config-path>]
    ```
 
    On computer 2:
    ```bash
-   python scripts/setup_overlay.py --computer 2 --remote-ip <computer1-ip>
+   python scripts/setup_overlay.py --computer 2 --remote-ip <computer1-ip> [--config <config-path>]
    ```
 
-   The setup script will automatically start all the necessary processes with the correct configuration:
-   - On computer 1: processes A and B
-   - On computer 2: processes C, D, and E
-
-   The overlay configuration will be set up as described in the requirements:
-   - AB: Process B on computer 1 connects to process A on computer 1
-   - BC: Process C on computer 2 connects to process B on computer 1
-   - BD: Process D on computer 2 connects to process B on computer 1
-   - CE: Process E on computer 2 connects to process C on computer 2
-   - DE: Process E on computer 2 connects to process D on computer 2
+   The setup script will automatically start all the necessary processes with the correct configuration based on the topology.json file.
 
 4. To stop all processes, press Ctrl+C in the terminal where the setup script is running.
+
+## Configuration
+
+The system uses a JSON configuration file to define the overlay network topology. The default configuration file is located at `configs/topology.json`.
+
+Example configuration:
+```json
+{
+  "nodes": {
+    "A": {
+      "computer": 1,
+      "port": 50051,
+      "connects_to": ["B"],
+      "data_range": [0, 199]
+    },
+    "B": {
+      "computer": 1,
+      "port": 50052,
+      "connects_to": ["A", "C", "D"],
+      "data_range": [200, 399]
+    },
+    "C": {
+      "computer": 2,
+      "port": 50053,
+      "connects_to": ["B", "E"],
+      "data_range": [400, 599]
+    },
+    "D": {
+      "computer": 2,
+      "port": 50054,
+      "connects_to": ["B", "E"],
+      "data_range": [600, 799]
+    },
+    "E": {
+      "computer": 2,
+      "port": 50055,
+      "connects_to": ["C", "D"],
+      "data_range": [800, 999]
+    }
+  },
+  "portal": "A",
+  "shared_memory_key": "basecamp_shared_memory",
+  "cache_size": 100,
+  "cache_ttl_seconds": 300
+}
+```
+
+Configuration parameters:
+- `nodes`: A dictionary of nodes in the overlay network
+  - `computer`: The computer number (1 or 2) where this node runs
+  - `port`: The port number for this node's server
+  - `connects_to`: An array of node IDs that this node connects to
+  - `data_range`: The range of keys that this node is responsible for
+- `portal`: The ID of the node that serves as the portal (entry point) for client queries
+- `shared_memory_key`: The key for the shared memory segment
+- `cache_size`: The maximum number of entries in the query cache
+- `cache_ttl_seconds`: The time-to-live for cache entries in seconds
+
+## Shared Memory and Caching
+
+The system uses shared memory for efficient data storage and retrieval within each node. This allows for fast access to data without the overhead of network communication.
+
+The caching mechanism stores query results to improve performance for repeated queries. The cache has a configurable size and time-to-live (TTL) for entries.
+
+## Query Types
+
+The system supports three types of queries:
+
+1. **Exact Query**: Retrieves a single data item by key
+2. **Range Query**: Retrieves all data items within a specified key range
+3. **All Query**: Retrieves all data items from all nodes
+
+Queries are processed as follows:
+1. The client sends a query to the portal node (A)
+2. The portal node checks its cache for the query result
+3. If the result is not in the cache, the portal node:
+   - Checks its local data for matching items
+   - Forwards the query to its peers
+   - Aggregates the results from all peers
+   - Caches the result for future queries
+4. The portal node returns the result to the client
 
 ### Manual Deployment (Alternative)
 

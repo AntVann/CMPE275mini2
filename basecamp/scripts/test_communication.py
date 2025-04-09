@@ -20,13 +20,15 @@ python_client_dir = os.path.abspath(
 )
 sys.path.append(python_client_dir)
 
-# Try to import the Python client
+# Try to import the Python client and proto modules
 try:
     from basecamp_client import BasecampClient
+    from proto import basecamp_pb2
+    from proto import basecamp_pb2_grpc
 except ImportError:
     # If the import fails, try to generate the Python code from the proto file
     print(
-        "Failed to import BasecampClient. Trying to generate Python code from proto file..."
+        "Failed to import BasecampClient or proto modules. Trying to generate Python code from proto file..."
     )
 
     # Try to import the generate_proto module
@@ -43,11 +45,13 @@ except ImportError:
         # Generate the Python code
         generate_proto(proto_file, output_dir)
 
-        # Try to import the Python client again
+        # Try to import the Python client and proto modules again
         sys.path.append(output_dir)
         from basecamp_client import BasecampClient
+        from proto import basecamp_pb2
+        from proto import basecamp_pb2_grpc
     except ImportError as e:
-        print(f"Failed to import BasecampClient: {e}")
+        print(f"Failed to import required modules: {e}")
         print(
             "Please make sure you have built the project and generated the Python code."
         )
@@ -207,6 +211,87 @@ def test_chat(server_address, sender_id=None, num_messages=3):
         return False
 
 
+def test_query_data(
+    server_address, query_type="exact", key=None, range_start=None, range_end=None
+):
+    """Test querying data from the server."""
+    print(f"Testing query_data to server at {server_address}...")
+
+    # Create a client
+    client = BasecampClient(server_address)
+
+    # Generate a random query ID
+    query_id = f"query_{generate_random_id()}"
+    client_id = f"client_{generate_random_id()}"
+
+    try:
+        # Create a query request
+        request = basecamp_pb2.QueryRequest(
+            query_id=query_id, client_id=client_id, timestamp=int(time.time() * 1000)
+        )
+
+        # Set the query type and parameters
+        request.query_type = query_type
+        if query_type == "exact":
+            request.key = key or random.randint(0, 999)
+        elif query_type == "range":
+            request.range_start = range_start or random.randint(0, 499)
+            request.range_end = range_end or (
+                request.range_start + random.randint(50, 200)
+            )
+        # For "all" query, no additional parameters are needed
+
+        # Send the query
+        response = client.stub.QueryData(request, timeout=client.timeout * 2)
+
+        # Print the result
+        print(f"Query ID: {response.query_id}")
+        print(f"Success: {response.success}")
+        print(f"From cache: {response.from_cache}")
+        print(f"Processing time: {response.processing_time} ms")
+        print(f"Results: {len(response.results)} items")
+
+        # Print the first few results
+        for i, item in enumerate(response.results[:5]):
+            print(f"  Result {i}: Key={item.key}, Source={item.source_node}")
+
+            # Print the value based on its type
+            if item.HasField("string_value"):
+                print(f"    String value: {item.string_value}")
+            elif item.HasField("double_value"):
+                print(f"    Double value: {item.double_value}")
+            elif item.HasField("bool_value"):
+                print(f"    Boolean value: {item.bool_value}")
+            elif item.HasField("object_value"):
+                obj = item.object_value
+                print(f"    Object: {obj.name}")
+                print(f"    Tags: {', '.join(obj.tags)}")
+                print(f"    Properties: {obj.properties}")
+            elif item.HasField("binary_value"):
+                print(f"    Binary value: {len(item.binary_value)} bytes")
+
+            # Print metadata
+            if item.metadata:
+                print(f"    Metadata: {item.metadata}")
+
+            print(f"    Data type: {item.data_type}")
+            print(f"    Timestamp: {item.timestamp}")
+
+        if len(response.results) > 5:
+            print(f"  ... and {len(response.results) - 5} more")
+
+        # Run the query again to test caching
+        print("\nRunning the same query again to test caching...")
+        response = client.stub.QueryData(request, timeout=client.timeout * 2)
+        print(f"From cache: {response.from_cache}")
+        print(f"Processing time: {response.processing_time} ms")
+
+        return True
+    except Exception as e:
+        print(f"Failed to query data: {e}")
+        return False
+
+
 def main():
     """Main function."""
     parser = argparse.ArgumentParser(
@@ -217,9 +302,30 @@ def main():
     )
     parser.add_argument(
         "--test",
-        choices=["send", "subscribe", "multiple", "chat", "all"],
+        choices=["send", "subscribe", "multiple", "chat", "query", "all"],
         default="all",
         help="Test to run (default: all)",
+    )
+    parser.add_argument(
+        "--query-type",
+        choices=["exact", "range", "all"],
+        default="exact",
+        help="Type of query to run (default: exact)",
+    )
+    parser.add_argument(
+        "--key",
+        type=int,
+        help="Key to query (for exact queries)",
+    )
+    parser.add_argument(
+        "--range-start",
+        type=int,
+        help="Start of range (for range queries)",
+    )
+    parser.add_argument(
+        "--range-end",
+        type=int,
+        help="End of range (for range queries)",
     )
 
     args = parser.parse_args()
@@ -243,6 +349,15 @@ def main():
 
     if args.test == "chat" or args.test == "all":
         test_chat(server_address)
+
+    if args.test == "query" or args.test == "all":
+        test_query_data(
+            server_address,
+            query_type=args.query_type,
+            key=args.key,
+            range_start=args.range_start,
+            range_end=args.range_end,
+        )
 
     print("\nAll tests completed.")
 
