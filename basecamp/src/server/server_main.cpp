@@ -102,18 +102,14 @@ private:
                 new CallData(service_, cq_);
                 
                 // Process the request
-                std::string message_id;
-                bool success = true;
-                std::string error_message;
+                std::string message_id = "msg_" + std::to_string(std::chrono::duration_cast<std::chrono::milliseconds>(
+                    std::chrono::system_clock::now().time_since_epoch()).count());
                 
                 // Set the response
-                response_.set_success(success);
+                response_.set_success(true);
                 response_.set_message_id(message_id);
                 response_.set_timestamp(std::chrono::duration_cast<std::chrono::milliseconds>(
                     std::chrono::system_clock::now().time_since_epoch()).count());
-                if (!error_message.empty()) {
-                    response_.set_error_message(error_message);
-                }
                 
                 // Finish the RPC
                 status_ = FINISH;

@@ -8,7 +8,7 @@ namespace basecamp {
 
 BasecampServiceImpl::BasecampServiceImpl()
     : rng_(std::random_device()()),
-      dist_(0, 0xFFFFFF) {
+      dist_(1, 0xFFFFFF) {  // Start from 1 to avoid empty strings
 }
 
 BasecampServiceImpl::~BasecampServiceImpl() {
@@ -152,8 +152,15 @@ std::string BasecampServiceImpl::GenerateMessageId() {
     
     // Generate a random message ID
     std::stringstream ss;
-    ss << std::hex << dist_(rng_);
-    return ss.str();
+    ss << "msg_" << std::hex << dist_(rng_);
+    
+    // Ensure the message ID is not empty
+    std::string message_id = ss.str();
+    if (message_id.empty() || message_id == "msg_") {
+        message_id = "msg_" + std::to_string(GetCurrentTimestamp());
+    }
+    
+    return message_id;
 }
 
 int64_t BasecampServiceImpl::GetCurrentTimestamp() {

@@ -16,6 +16,8 @@ class BasecampClient:
 
     def __init__(self, server_address):
         """Initialize the client with a server address."""
+        # Set a timeout for gRPC calls (5 seconds)
+        self.timeout = 5
         self.channel = grpc.insecure_channel(server_address)
         self.stub = basecamp_pb2_grpc.BasecampServiceStub(self.channel)
         self.running = True
@@ -41,9 +43,9 @@ class BasecampClient:
         )
 
         try:
-            response = self.stub.SendMessage(request)
+            response = self.stub.SendMessage(request, timeout=self.timeout)
             if response.success:
-                print(f"Message sent successfully with ID: {response.message_id}")
+                print(f"Message sent successfully with ID: '{response.message_id}'")
                 return response.message_id
             else:
                 print(f"Server error: {response.error_message}")
@@ -60,7 +62,11 @@ class BasecampClient:
 
         def subscription_thread_func():
             try:
-                for update in self.stub.SubscribeToUpdates(request):
+                # Create metadata with a deadline (use a much longer timeout for chat)
+                metadata = [("deadline", str(time.time() + self.timeout * 10))]
+
+                # Call with metadata
+                for update in self.stub.SubscribeToUpdates(request, metadata=metadata):
                     if not self.running:
                         break
                     callback(update)
@@ -85,7 +91,10 @@ class BasecampClient:
                 )
 
         try:
-            response = self.stub.SendMultipleMessages(message_generator())
+            # Add timeout to the gRPC call (use a much longer timeout for multiple messages)
+            response = self.stub.SendMultipleMessages(
+                message_generator(), timeout=self.timeout * 10
+            )
             print(f"Sent {response.success_count} messages successfully")
             if response.failure_count > 0:
                 print(f"Failed to send {response.failure_count} messages")
@@ -99,43 +108,36 @@ class BasecampClient:
 
         def chat_thread_func():
             try:
-                # Create a bidirectional stream
-                chat_stream = self.stub.Chat()
+                # Create a generator for the request messages
+                def request_iterator():
+                    while self.running:
+                        content = get_next_message()
+                        if content is None:
+                            break
 
-                # Start a thread to read messages
-                def read_thread_func():
-                    try:
-                        for message in chat_stream:
-                            if not self.running:
-                                break
-                            receive_callback(message)
-                    except grpc.RpcError as e:
-                        print(f"Error reading chat messages: {e}")
+                        message = basecamp_pb2.ChatMessage(
+                            sender_id=sender_id,
+                            content=content,
+                            timestamp=int(time.time() * 1000),
+                        )
+                        yield message
+                        time.sleep(0.1)  # Small delay between messages
 
-                read_thread = threading.Thread(target=read_thread_func)
-                read_thread.daemon = True
-                read_thread.start()
+                # Create metadata with a deadline (use a much longer timeout for chat)
+                metadata = [("deadline", str(time.time() + self.timeout * 10))]
 
-                # Send messages
-                while self.running:
-                    content = get_next_message()
-                    if content is None:
-                        break
+                # Create a bidirectional stream with the request iterator and metadata
+                chat_stream = self.stub.Chat(request_iterator(), metadata=metadata)
 
-                    message = basecamp_pb2.ChatMessage(
-                        sender_id=sender_id,
-                        content=content,
-                        timestamp=int(time.time() * 1000),
-                    )
-                    try:
-                        chat_stream.write(message)
-                    except grpc.RpcError as e:
-                        print(f"Error sending chat message: {e}")
-                        break
+                # Read responses
+                try:
+                    for message in chat_stream:
+                        if not self.running:
+                            break
+                        receive_callback(message)
+                except grpc.RpcError as e:
+                    print(f"Error reading chat messages: {e}")
 
-                # Close the stream
-                chat_stream.close()
-                read_thread.join()
             except grpc.RpcError as e:
                 print(f"Error in chat: {e}")
 

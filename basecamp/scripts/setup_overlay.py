@@ -46,6 +46,28 @@ def get_server_command(process_id: str, ip: str) -> List[str]:
     if sys.platform == "win32":
         server_path += ".exe"
 
+    # Check if the server executable exists
+    if not os.path.exists(server_path):
+        print(f"Server executable not found at {server_path}")
+        print("Checking alternative paths...")
+
+        # Try to find the executable in the current directory
+        alt_path = os.path.abspath(
+            os.path.join(
+                os.path.dirname(__file__), "..", "src", "server", "basecamp_server"
+            )
+        )
+        if sys.platform == "win32":
+            alt_path += ".exe"
+
+        if os.path.exists(alt_path):
+            print(f"Found server executable at {alt_path}")
+            server_path = alt_path
+        else:
+            print(f"Server executable not found at {alt_path} either")
+            print("Please make sure you have built the project using scripts/build.py")
+            sys.exit(1)
+
     return [server_path, "--address", f"{ip}:{port}"]
 
 
@@ -74,6 +96,28 @@ def get_client_command(process_id: str, connect_to: str, ip: str) -> List[str]:
     # Add .exe extension on Windows
     if sys.platform == "win32":
         client_path += ".exe"
+
+    # Check if the client executable exists
+    if not os.path.exists(client_path):
+        print(f"Client executable not found at {client_path}")
+        print("Checking alternative paths...")
+
+        # Try to find the executable in the current directory
+        alt_path = os.path.abspath(
+            os.path.join(
+                os.path.dirname(__file__), "..", "src", "cpp_client", "basecamp_client"
+            )
+        )
+        if sys.platform == "win32":
+            alt_path += ".exe"
+
+        if os.path.exists(alt_path):
+            print(f"Found client executable at {alt_path}")
+            client_path = alt_path
+        else:
+            print(f"Client executable not found at {alt_path} either")
+            print("Please make sure you have built the project using scripts/build.py")
+            sys.exit(1)
 
     return [client_path, "--address", f"{connect_ip}:{connect_port}"]
 
@@ -152,6 +196,54 @@ def stop_all_processes() -> None:
             process.kill()
 
 
+def copy_dlls_if_needed() -> None:
+    """Copy necessary DLLs to the executable directories if on Windows."""
+    if sys.platform != "win32":
+        return
+
+    # Check if we're using MSYS2/MinGW
+    msys2_path = "C:/msys64/ucrt64"
+    if not os.path.exists(msys2_path):
+        return
+
+    # Get the paths to the server and client executables
+    server_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "build", "src", "server")
+    )
+    client_dir = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "..", "build", "src", "cpp_client")
+    )
+
+    # Create the directories if they don't exist
+    os.makedirs(server_dir, exist_ok=True)
+    os.makedirs(client_dir, exist_ok=True)
+
+    # List of DLLs to copy
+    dlls = [
+        "libssl-3-x64.dll",
+        "libcrypto-3-x64.dll",
+        "libz.dll",
+        "libgcc_s_seh-1.dll",
+        "libstdc++-6.dll",
+        "libwinpthread-1.dll",
+    ]
+
+    # Copy the DLLs to the server and client directories
+    for dll in dlls:
+        dll_path = os.path.join(msys2_path, "bin", dll)
+        if os.path.exists(dll_path):
+            print(f"Copying {dll} to server and client directories...")
+            try:
+                import shutil
+
+                shutil.copy2(dll_path, server_dir)
+                shutil.copy2(dll_path, client_dir)
+            except Exception as e:
+                print(f"Error copying {dll}: {e}")
+        else:
+            print(f"Warning: {dll} not found in {msys2_path}/bin")
+
+
 def main() -> None:
     """Main function."""
     global args
@@ -176,6 +268,9 @@ def main() -> None:
     )
 
     args = parser.parse_args()
+
+    # Copy necessary DLLs if on Windows
+    copy_dlls_if_needed()
 
     try:
         # Start processes for the specified computer
