@@ -1,0 +1,83 @@
+# Build directories
+/build/
+/cmake-build-*/
+
+# Generated files
+/proto-gen/
+/grpc-gen/
+/src/python_client/proto/basecamp_pb2.py
+/src/python_client/proto/basecamp_pb2_grpc.py
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+CMakeScripts/
+Testing/
+Makefile
+cmake_install.cmake
+install_manifest.txt
+compile_commands.json
+CTestTestfile.cmake
+
+# Visual Studio Code
+.vscode/
+*.code-workspace
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Performance test results
+performance_results.png
+performance_comparison.png
+memory_performance_results.png
+memory_performance_comparison.png
+
+# Temporary files
+*.swp
+*~
+.DS_Store

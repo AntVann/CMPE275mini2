@@ -55,6 +55,16 @@ class BasecampServiceStub(object):
                 request_serializer=basecamp__pb2.ChatMessage.SerializeToString,
                 response_deserializer=basecamp__pb2.ChatMessage.FromString,
                 _registered_method=True)
+        self.QueryData = channel.unary_unary(
+                '/basecamp.BasecampService/QueryData',
+                request_serializer=basecamp__pb2.QueryRequest.SerializeToString,
+                response_deserializer=basecamp__pb2.QueryResponse.FromString,
+                _registered_method=True)
+        self.GatherData = channel.unary_unary(
+                '/basecamp.BasecampService/GatherData',
+                request_serializer=basecamp__pb2.DataRequest.SerializeToString,
+                response_deserializer=basecamp__pb2.DataResponse.FromString,
+                _registered_method=True)
 
 
 class BasecampServiceServicer(object):
@@ -89,6 +99,20 @@ class BasecampServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def QueryData(self, request, context):
+        """Query RPC for data retrieval across the network
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GatherData(self, request, context):
+        """Internal RPC for peer-to-peer data gathering (used between nodes)
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_BasecampServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -111,6 +135,16 @@ def add_BasecampServiceServicer_to_server(servicer, server):
                     servicer.Chat,
                     request_deserializer=basecamp__pb2.ChatMessage.FromString,
                     response_serializer=basecamp__pb2.ChatMessage.SerializeToString,
+            ),
+            'QueryData': grpc.unary_unary_rpc_method_handler(
+                    servicer.QueryData,
+                    request_deserializer=basecamp__pb2.QueryRequest.FromString,
+                    response_serializer=basecamp__pb2.QueryResponse.SerializeToString,
+            ),
+            'GatherData': grpc.unary_unary_rpc_method_handler(
+                    servicer.GatherData,
+                    request_deserializer=basecamp__pb2.DataRequest.FromString,
+                    response_serializer=basecamp__pb2.DataResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -222,6 +256,60 @@ class BasecampService(object):
             '/basecamp.BasecampService/Chat',
             basecamp__pb2.ChatMessage.SerializeToString,
             basecamp__pb2.ChatMessage.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def QueryData(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/basecamp.BasecampService/QueryData',
+            basecamp__pb2.QueryRequest.SerializeToString,
+            basecamp__pb2.QueryResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GatherData(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/basecamp.BasecampService/GatherData',
+            basecamp__pb2.DataRequest.SerializeToString,
+            basecamp__pb2.DataResponse.FromString,
             options,
             channel_credentials,
             insecure,
