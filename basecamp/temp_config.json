@@ -1,0 +1,69 @@
+{
+  "nodes": {
+    "A": {
+      "computer": 1,
+      "port": 50051,
+      "connects_to": [
+        "B"
+      ],
+      "data_range": [
+        0,
+        199
+      ]
+    },
+    "B": {
+      "computer": 1,
+      "port": 50052,
+      "connects_to": [
+        "A",
+        "C",
+        "D"
+      ],
+      "data_range": [
+        200,
+        399
+      ]
+    },
+    "C": {
+      "computer": 2,
+      "port": 50053,
+      "connects_to": [
+        "B",
+        "E"
+      ],
+      "data_range": [
+        400,
+        599
+      ]
+    },
+    "D": {
+      "computer": 2,
+      "port": 50054,
+      "connects_to": [
+        "B",
+        "E"
+      ],
+      "data_range": [
+        600,
+        799
+      ]
+    },
+    "E": {
+      "computer": 2,
+      "port": 50055,
+      "connects_to": [
+        "C",
+        "D"
+      ],
+      "data_range": [
+        800,
+        999
+      ]
+    }
+  },
+  "portal": "A",
+  "shared_memory_key": "basecamp_shared_memory",
+  "cache_size": 100,
+  "cache_ttl_seconds": 300,
+  "use_shared_memory": true
+}

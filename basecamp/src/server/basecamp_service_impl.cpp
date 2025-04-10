@@ -6,6 +6,7 @@
 #include <fstream>
 #include <algorithm>
 #include <filesystem>
+#include <future>
 
 namespace basecamp {
 
@@ -299,12 +300,28 @@ void BasecampServiceImpl::HandleSendMultipleMessages(
     BatchResponse* response,
     std::function<void(grpc::Status)> callback) {
     
+    // Start timing the processing
+    auto start_time = std::chrono::high_resolution_clock::now();
+    
+    // Set a timeout for the entire operation
+    auto timeout = std::chrono::milliseconds(4000);  // 4 seconds timeout
+    
     MessageRequest request;
     int success_count = 0;
     int failure_count = 0;
     
-    // Process each message
+    // Process each message with a timeout
     while (reader->Read(&request)) {
+        // Check if we've exceeded the timeout
+        auto now = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time);
+        
+        if (elapsed >= timeout) {
+            std::cerr << "Timeout processing multiple messages" << std::endl;
+            break;
+        }
+        
+        // Process the message
         std::string message_id;
         bool success = StoreMessage(request, &message_id);
         
@@ -323,6 +340,10 @@ void BasecampServiceImpl::HandleSendMultipleMessages(
     if (failure_count > 0) {
         response->set_error_message("Failed to store " + std::to_string(failure_count) + " messages");
     }
+    
+    // Set the processing time
+    auto end_time = std::chrono::high_resolution_clock::now();
+    auto duration = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
     
     // Call the callback with OK status
     callback(grpc::Status::OK);
@@ -369,6 +390,9 @@ void BasecampServiceImpl::HandleQueryData(
     // Start timing the query
     auto start_time = std::chrono::high_resolution_clock::now();
     
+    // Set a timeout for the entire operation
+    auto timeout = std::chrono::milliseconds(4000);  // 4 seconds timeout
+    
     // Set the query ID and timestamp
     response->set_query_id(request->query_id());
     response->set_timestamp(GetCurrentTimestamp());
@@ -389,8 +413,16 @@ void BasecampServiceImpl::HandleQueryData(
     // Query local data
     QueryLocalData(*request, response);
     
-    // Query peers
-    QueryPeers(*request, response);
+    // Check if we've exceeded the timeout
+    auto now = std::chrono::high_resolution_clock::now();
+    auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time);
+    
+    if (elapsed < timeout) {
+        // Query peers
+        QueryPeers(*request, response);
+    } else {
+        std::cerr << "Timeout exceeded, skipping peer queries" << std::endl;
+    }
     
     // Set success flag
     response->set_success(true);
@@ -524,8 +556,8 @@ void BasecampServiceImpl::ProcessForwardedRequest(const DataRequest& request, Da
 }
 
 void BasecampServiceImpl::ForwardRequestToPeers(const DataRequest& request, DataResponse* aggregated_response) {
-    // Create a vector to store the threads
-    std::vector<std::thread> threads;
+    // Create a vector to store the futures
+    std::vector<std::future<void>> futures;
     std::mutex response_mutex;
     
     // For each peer
@@ -543,47 +575,96 @@ void BasecampServiceImpl::ForwardRequestToPeers(const DataRequest& request, Data
             continue;
         }
         
-        // Create a thread to forward the request to this peer
-        threads.emplace_back([this, &peer_id, &peer_info, &request, aggregated_response, &response_mutex]() {
-            // Create a context
+        // Only forward to peers that might have the data
+        bool should_forward = false;
+        
+        if (request.query_type() == "exact") {
+            // Check if the peer's data range contains the key
+            auto& peer_config = config_["nodes"][peer_id];
+            int peer_range_start = peer_config["data_range"][0];
+            int peer_range_end = peer_config["data_range"][1];
+            
+            should_forward = (request.key() >= peer_range_start && request.key() <= peer_range_end);
+        } else if (request.query_type() == "range") {
+            // Check if the peer's data range overlaps with the query range
+            auto& peer_config = config_["nodes"][peer_id];
+            int peer_range_start = peer_config["data_range"][0];
+            int peer_range_end = peer_config["data_range"][1];
+            
+            should_forward = (request.range_start() <= peer_range_end && request.range_end() >= peer_range_start);
+        } else if (request.query_type() == "all") {
+            // Always forward for "all" queries
+            should_forward = true;
+        }
+        
+        if (!should_forward) {
+            continue;
+        }
+        
+        // Create a future to forward the request to this peer
+        auto future = std::async(std::launch::async, [this, peer_id, &peer_info, &request, aggregated_response, &response_mutex]() {
+            // Create a context with a longer timeout
             grpc::ClientContext context;
+            context.set_deadline(std::chrono::system_clock::now() + std::chrono::milliseconds(5000));
             
             // Create a response
             DataResponse peer_response;
             
-            // Send the request
-            grpc::Status status = peer_info.stub->GatherData(&context, request, &peer_response);
-            
-            // Check if the request was successful
-            if (!status.ok()) {
-                std::cerr << "Error forwarding request to peer " << peer_id << ": " << status.error_message() << std::endl;
-                return;
-            }
-            
-            // Check if the peer processed the request successfully
-            if (!peer_response.success()) {
-                std::cerr << "Peer " << peer_id << " error: " << peer_response.error_message() << std::endl;
-                return;
-            }
-            
-            // Lock the mutex before updating the aggregated response
-            std::lock_guard<std::mutex> lock(response_mutex);
-            
-            // Add the peer's data items to the aggregated response
-            for (const auto& item : peer_response.data_items()) {
-                *aggregated_response->add_data_items() = item;
-            }
-            
-            // Add the peer's contributing nodes to the aggregated response
-            for (const auto& node : peer_response.contributing_nodes()) {
-                aggregated_response->add_contributing_nodes(node);
+            try {
+                // Send the request with a timeout
+                grpc::Status status = peer_info.stub->GatherData(&context, request, &peer_response);
+                
+                // Check if the request was successful
+                if (!status.ok()) {
+                    std::cerr << "Error forwarding request to peer " << peer_id << ": " << status.error_message() << std::endl;
+                    return;
+                }
+                
+                // Check if the peer processed the request successfully
+                if (!peer_response.success()) {
+                    std::cerr << "Peer " << peer_id << " error: " << peer_response.error_message() << std::endl;
+                    return;
+                }
+                
+                // Lock the mutex before updating the aggregated response
+                std::lock_guard<std::mutex> lock(response_mutex);
+                
+                // Add the peer's data items to the aggregated response
+                for (const auto& item : peer_response.data_items()) {
+                    *aggregated_response->add_data_items() = item;
+                }
+                
+                // Add the peer's contributing nodes to the aggregated response
+                for (const auto& node : peer_response.contributing_nodes()) {
+                    aggregated_response->add_contributing_nodes(node);
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Exception forwarding request to peer " << peer_id << ": " << e.what() << std::endl;
             }
         });
+        
+        futures.push_back(std::move(future));
     }
     
-    // Wait for all threads to finish
-    for (auto& thread : threads) {
-        thread.join();
+    // Wait for all futures to complete with a timeout
+    auto start_time = std::chrono::high_resolution_clock::now();
+    auto timeout = std::chrono::milliseconds(4000);  // 4 seconds timeout
+    
+    for (auto& future : futures) {
+        auto now = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time);
+        
+        if (elapsed >= timeout) {
+            std::cerr << "Timeout waiting for peer responses" << std::endl;
+            break;
+        }
+        
+        auto remaining = timeout - elapsed;
+        auto status = future.wait_for(remaining);
+        
+        if (status != std::future_status::ready) {
+            std::cerr << "Timeout waiting for a peer response" << std::endl;
+        }
     }
 }
 
@@ -592,7 +673,7 @@ void BasecampServiceImpl::QueryLocalData(const QueryRequest& request, QueryRespo
     int key = request.key();
     bool in_range = false;
     
-    if (request.query_type() == "exact") {
+    if (request.query_type() == "exact" || request.query_type() == "write") {
         in_range = (key >= data_range_[0] && key <= data_range_[1]);
     } else if (request.query_type() == "range") {
         // Check if any part of the range overlaps with this node's data range
@@ -608,13 +689,29 @@ void BasecampServiceImpl::QueryLocalData(const QueryRequest& request, QueryRespo
         return;
     }
     
-    // Query the data
+    // Query or write the data
     if (request.query_type() == "exact") {
         // Exact key query
         DataItem item;
         bool found = RetrieveDataFromSharedMemory(key, &item);
         
         if (found) {
+            *response->add_results() = item;
+        }
+    } else if (request.query_type() == "write") {
+        // Write operation
+        DataItem item;
+        item.set_key(key);
+        item.set_string_value(request.string_param());
+        item.set_source_node(node_id_);
+        item.set_timestamp(GetCurrentTimestamp());
+        item.set_data_type("string");
+        (*item.mutable_metadata())["created_by"] = node_id_;
+        (*item.mutable_metadata())["version"] = "1.0";
+        
+        bool success = StoreDataInSharedMemory(key, item);
+        
+        if (success) {
             *response->add_results() = item;
         }
     } else if (request.query_type() == "range") {
@@ -663,48 +760,97 @@ void BasecampServiceImpl::QueryPeers(const QueryRequest& request, QueryResponse*
     (*data_request.mutable_query_context())["origin"] = "portal";
     (*data_request.mutable_query_context())["client_id"] = request.client_id();
     
-    // Create a vector to store the threads
-    std::vector<std::thread> threads;
+    // Create a vector to store the futures
+    std::vector<std::future<void>> futures;
     std::mutex response_mutex;
     
     // For each peer
     for (const auto& [peer_id, peer_info] : peers_) {
-        // Create a thread to send the request to this peer
-        threads.emplace_back([this, &peer_id, &peer_info, &data_request, response, &response_mutex]() {
-            // Create a context
+        // Only query peers that might have the data
+        bool should_query = false;
+        
+        if (request.query_type() == "exact") {
+            // Check if the peer's data range contains the key
+            auto& peer_config = config_["nodes"][peer_id];
+            int peer_range_start = peer_config["data_range"][0];
+            int peer_range_end = peer_config["data_range"][1];
+            
+            should_query = (request.key() >= peer_range_start && request.key() <= peer_range_end);
+        } else if (request.query_type() == "range") {
+            // Check if the peer's data range overlaps with the query range
+            auto& peer_config = config_["nodes"][peer_id];
+            int peer_range_start = peer_config["data_range"][0];
+            int peer_range_end = peer_config["data_range"][1];
+            
+            should_query = (request.range_start() <= peer_range_end && request.range_end() >= peer_range_start);
+        } else if (request.query_type() == "all" || request.query_type() == "write") {
+            // Always query for "all" and "write" queries
+            should_query = true;
+        }
+        
+        if (!should_query) {
+            continue;
+        }
+        
+        // Create a future to send the request to this peer
+        auto future = std::async(std::launch::async, [this, peer_id, &peer_info, &data_request, response, &response_mutex]() {
+            // Create a context with a longer timeout
             grpc::ClientContext context;
+            context.set_deadline(std::chrono::system_clock::now() + std::chrono::milliseconds(5000));
             
             // Create a response
             DataResponse data_response;
             
-            // Send the request
-            grpc::Status status = peer_info.stub->GatherData(&context, data_request, &data_response);
-            
-            // Check if the request was successful
-            if (!status.ok()) {
-                std::cerr << "Error querying peer " << peer_id << ": " << status.error_message() << std::endl;
-                return;
-            }
-            
-            // Check if the peer processed the request successfully
-            if (!data_response.success()) {
-                std::cerr << "Peer " << peer_id << " error: " << data_response.error_message() << std::endl;
-                return;
-            }
-            
-            // Lock the mutex before updating the response
-            std::lock_guard<std::mutex> lock(response_mutex);
-            
-            // Add the results to the response
-            for (const auto& item : data_response.data_items()) {
-                *response->add_results() = item;
+            try {
+                // Send the request with a timeout
+                grpc::Status status = peer_info.stub->GatherData(&context, data_request, &data_response);
+                
+                // Check if the request was successful
+                if (!status.ok()) {
+                    std::cerr << "Error querying peer " << peer_id << ": " << status.error_message() << std::endl;
+                    return;
+                }
+                
+                // Check if the peer processed the request successfully
+                if (!data_response.success()) {
+                    std::cerr << "Peer " << peer_id << " error: " << data_response.error_message() << std::endl;
+                    return;
+                }
+                
+                // Lock the mutex before updating the response
+                std::lock_guard<std::mutex> lock(response_mutex);
+                
+                // Add the results to the response
+                for (const auto& item : data_response.data_items()) {
+                    *response->add_results() = item;
+                }
+            } catch (const std::exception& e) {
+                std::cerr << "Exception querying peer " << peer_id << ": " << e.what() << std::endl;
             }
         });
+        
+        futures.push_back(std::move(future));
     }
     
-    // Wait for all threads to finish
-    for (auto& thread : threads) {
-        thread.join();
+    // Wait for all futures to complete with a timeout
+    auto start_time = std::chrono::high_resolution_clock::now();
+    auto timeout = std::chrono::milliseconds(4000);  // 4 seconds timeout
+    
+    for (auto& future : futures) {
+        auto now = std::chrono::high_resolution_clock::now();
+        auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(now - start_time);
+        
+        if (elapsed >= timeout) {
+            std::cerr << "Timeout waiting for peer responses" << std::endl;
+            break;
+        }
+        
+        auto remaining = timeout - elapsed;
+        auto status = future.wait_for(remaining);
+        
+        if (status != std::future_status::ready) {
+            std::cerr << "Timeout waiting for a peer response" << std::endl;
+        }
     }
 }
 

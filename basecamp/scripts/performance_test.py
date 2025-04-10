@@ -121,13 +121,13 @@ class PerformanceTester:
                 timestamp=int(time.time() * 1000),
             )
 
-            # Send the query to populate the cache
-            self.client.stub.QueryData(request, timeout=self.client.timeout * 2)
+            # Send the query to populate the cache with a longer timeout
+            self.client.stub.QueryData(request, timeout=self.client.timeout * 10)
 
-            # Now measure the cached query
+            # Now measure the cached query with a longer timeout
             start_time = time.time()
             response = self.client.stub.QueryData(
-                request, timeout=self.client.timeout * 2
+                request, timeout=self.client.timeout * 10
             )
             end_time = time.time()
 

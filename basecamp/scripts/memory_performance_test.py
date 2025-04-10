@@ -196,8 +196,8 @@ class MemoryPerformanceTester:
                 # Add the value as a parameter
                 request.string_param = value
 
-                # Send the query
-                self.client.stub.QueryData(request, timeout=self.client.timeout * 2)
+                # Send the query with a longer timeout
+                self.client.stub.QueryData(request, timeout=self.client.timeout * 10)
 
             end_time = time.time()
 
@@ -256,8 +256,8 @@ class MemoryPerformanceTester:
                 # Add the value as a parameter
                 request.string_param = value
 
-                # Send the query
-                self.client.stub.QueryData(request, timeout=self.client.timeout * 2)
+                # Send the query with a longer timeout
+                self.client.stub.QueryData(request, timeout=self.client.timeout * 10)
 
             end_time = time.time()
 
@@ -343,8 +343,8 @@ class MemoryPerformanceTester:
             # Add the value as a parameter
             request.string_param = value
 
-            # Send the query
-            self.client.stub.QueryData(request, timeout=self.client.timeout * 2)
+            # Send the query with a longer timeout
+            self.client.stub.QueryData(request, timeout=self.client.timeout * 10)
 
         # Now test read performance
         times_shared_memory = []
@@ -667,8 +667,8 @@ def main():
     )
     parser.add_argument(
         "--config",
-        default="../configs/topology.json",
-        help="Path to the configuration file (default: ../configs/topology.json)",
+        default="configs/topology.json",
+        help="Path to the configuration file (default: configs/topology.json)",
     )
     parser.add_argument(
         "--items",

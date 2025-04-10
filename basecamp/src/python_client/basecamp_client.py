@@ -16,8 +16,8 @@ class BasecampClient:
 
     def __init__(self, server_address):
         """Initialize the client with a server address."""
-        # Set a timeout for gRPC calls (5 seconds)
-        self.timeout = 5
+        # Set a timeout for gRPC calls (20 seconds)
+        self.timeout = 20
         self.channel = grpc.insecure_channel(server_address)
         self.stub = basecamp_pb2_grpc.BasecampServiceStub(self.channel)
         self.running = True

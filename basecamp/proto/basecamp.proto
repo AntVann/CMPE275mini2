@@ -72,10 +72,11 @@ message QueryRequest {
   string query_id = 1;
   string client_id = 2;
   int32 key = 3;
-  string query_type = 4;  // "exact", "range", "all"
+  string query_type = 4;  // "exact", "range", "all", "write"
   int32 range_start = 5;  // Used for range queries
   int32 range_end = 6;    // Used for range queries
   int64 timestamp = 7;
+  string string_param = 8; // Used for write operations
 }
 
 // Query response with results

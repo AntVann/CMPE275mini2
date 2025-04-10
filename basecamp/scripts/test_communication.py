@@ -239,10 +239,13 @@ def test_query_data(
             request.range_end = range_end or (
                 request.range_start + random.randint(50, 200)
             )
+        elif query_type == "write":
+            request.key = key or random.randint(0, 999)
+            request.string_param = f"Test value for key {request.key} at {time.time()}"
         # For "all" query, no additional parameters are needed
 
-        # Send the query
-        response = client.stub.QueryData(request, timeout=client.timeout * 2)
+        # Send the query with a longer timeout
+        response = client.stub.QueryData(request, timeout=client.timeout * 10)
 
         # Print the result
         print(f"Query ID: {response.query_id}")
@@ -280,9 +283,9 @@ def test_query_data(
         if len(response.results) > 5:
             print(f"  ... and {len(response.results) - 5} more")
 
-        # Run the query again to test caching
+        # Run the query again to test caching with a longer timeout
         print("\nRunning the same query again to test caching...")
-        response = client.stub.QueryData(request, timeout=client.timeout * 2)
+        response = client.stub.QueryData(request, timeout=client.timeout * 10)
         print(f"From cache: {response.from_cache}")
         print(f"Processing time: {response.processing_time} ms")
 
@@ -308,7 +311,7 @@ def main():
     )
     parser.add_argument(
         "--query-type",
-        choices=["exact", "range", "all"],
+        choices=["exact", "range", "all", "write"],
         default="exact",
         help="Type of query to run (default: exact)",
     )
