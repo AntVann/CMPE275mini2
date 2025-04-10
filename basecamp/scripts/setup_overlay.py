@@ -126,7 +126,9 @@ def get_client_command(
     return [client_path, "--address", f"{connect_ip}:{connect_port}"]
 
 
-def start_process(process_id: str, computer: int, ip: str, config_path: str) -> None:
+def start_process(
+    process_id: str, computer: int, ip: str, remote_ip: str, config_path: str
+) -> None:
     """Start a process (server and clients if needed)."""
     # Load the configuration
     with open(config_path, "r") as f:
@@ -143,8 +145,13 @@ def start_process(process_id: str, computer: int, ip: str, config_path: str) -> 
     server_cmd = get_server_command(process_id, ip, config_path)
     print(f"Starting server for process {process_id}: {' '.join(server_cmd)}")
 
+    # Set the REMOTE_IP environment variable for the server process
+    env = os.environ.copy()
+    env["REMOTE_IP"] = remote_ip
+    print(f"Setting REMOTE_IP={remote_ip} for server process {process_id}")
+
     server_process = subprocess.Popen(
-        server_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+        server_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=env
     )
     running_processes[f"{process_id}_server"] = server_process
 
@@ -169,7 +176,11 @@ def start_process(process_id: str, computer: int, ip: str, config_path: str) -> 
         )
 
         client_process = subprocess.Popen(
-            client_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True
+            client_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            env=env,
         )
         running_processes[f"{process_id}_client_{connect_to}"] = client_process
 
@@ -294,7 +305,9 @@ def main() -> None:
         # Start processes for the specified computer
         for process_id, process in config["nodes"].items():
             if process["computer"] == args.computer:
-                start_process(process_id, args.computer, args.ip, args.config)
+                start_process(
+                    process_id, args.computer, args.ip, args.remote_ip, args.config
+                )
 
         print("\nAll processes started. Press Ctrl+C to stop.\n")
 

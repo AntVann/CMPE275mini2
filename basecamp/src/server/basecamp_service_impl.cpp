@@ -180,25 +180,47 @@ void BasecampServiceImpl::ConnectToPeers() {
         auto& node_config = config_["nodes"][node_id_];
         auto& connects_to = node_config["connects_to"];
         
+        std::cout << "[" << node_id_ << "] ConnectToPeers: Connecting to " << connects_to.size() << " peers" << std::endl;
+        
         // Connect to each peer
         for (const auto& peer_id : connects_to) {
             std::string peer_id_str = peer_id;
             
             // Skip if the peer is not in the configuration
             if (!config_["nodes"].contains(peer_id_str)) {
-                std::cerr << "Peer " << peer_id_str << " not found in configuration" << std::endl;
+                std::cerr << "[" << node_id_ << "] ConnectToPeers: Peer " << peer_id_str << " not found in configuration" << std::endl;
                 continue;
             }
             
             // Get the peer's address
             auto& peer_config = config_["nodes"][peer_id_str];
             int peer_port = peer_config["port"];
+            int peer_computer = peer_config["computer"];
             
             // Determine the peer's IP address based on the computer
-            std::string peer_ip = "127.0.0.1";  // Default to localhost
+            std::string peer_ip;
+            if (peer_computer == node_config["computer"]) {
+                // If the peer is on the same computer, use localhost
+                peer_ip = "127.0.0.1";
+                std::cout << "[" << node_id_ << "] ConnectToPeers: Peer " << peer_id_str << " is on the same computer, using localhost" << std::endl;
+            } else {
+                // If the peer is on a different computer, use the remote IP
+                // This should be passed in from the command line via the environment
+                const char* remote_ip = std::getenv("REMOTE_IP");
+                if (remote_ip && strlen(remote_ip) > 0) {
+                    peer_ip = remote_ip;
+                    std::cout << "[" << node_id_ << "] ConnectToPeers: Peer " << peer_id_str << " is on a different computer, using remote IP " << peer_ip << std::endl;
+                } else {
+                    // Default to localhost if no remote IP is provided
+                    peer_ip = "127.0.0.1";
+                    std::cout << "[" << node_id_ << "] ConnectToPeers: Peer " << peer_id_str << " is on a different computer, but no remote IP provided, using localhost" << std::endl;
+                }
+            }
             
             // Create the peer's address
             std::string peer_address = peer_ip + ":" + std::to_string(peer_port);
+            
+            std::cout << "[" << node_id_ << "] ConnectToPeers: Creating channel to peer " << peer_id_str << " at " << peer_address << std::endl;
             
             // Create a channel to the peer
             auto channel = grpc::CreateChannel(peer_address, grpc::InsecureChannelCredentials());
@@ -212,10 +234,10 @@ void BasecampServiceImpl::ConnectToPeers() {
             peer_info.stub = std::move(stub);
             peers_[peer_id_str] = std::move(peer_info);
             
-            std::cout << "Connected to peer " << peer_id_str << " at " << peer_address << std::endl;
+            std::cout << "[" << node_id_ << "] ConnectToPeers: Connected to peer " << peer_id_str << " at " << peer_address << std::endl;
         }
     } catch (const std::exception& e) {
-        std::cerr << "Error connecting to peers: " << e.what() << std::endl;
+        std::cerr << "[" << node_id_ << "] ConnectToPeers: Error connecting to peers: " << e.what() << std::endl;
         throw;
     }
 }
@@ -354,23 +376,44 @@ void BasecampServiceImpl::HandleChat(
     grpc::ServerReaderWriter<ChatMessage, ChatMessage>* stream,
     std::function<void(grpc::Status)> callback) {
     
-    ChatMessage message;
+    std::cout << "[" << node_id_ << "] HandleChat: Starting chat session" << std::endl;
     
-    // Read and echo messages
-    while (stream->Read(&message)) {
-        // Echo the message back
-        ChatMessage response;
-        response.set_sender_id("server");
-        response.set_content("Echo: " + message.content());
-        response.set_timestamp(GetCurrentTimestamp());
+    try {
+        ChatMessage message;
+        int message_count = 0;
         
-        if (!stream->Write(response)) {
-            break;
+        // Read and echo messages
+        while (stream->Read(&message)) {
+            std::cout << "[" << node_id_ << "] HandleChat: Received message from " << message.sender_id() << ": " << message.content() << std::endl;
+            message_count++;
+            
+            // Echo the message back
+            ChatMessage response;
+            response.set_sender_id(node_id_);
+            response.set_content("Echo from " + node_id_ + ": " + message.content());
+            response.set_timestamp(GetCurrentTimestamp());
+            
+            std::cout << "[" << node_id_ << "] HandleChat: Sending response: " << response.content() << std::endl;
+            
+            if (!stream->Write(response)) {
+                std::cerr << "[" << node_id_ << "] HandleChat: Failed to write response" << std::endl;
+                break;
+            }
+            
+            std::cout << "[" << node_id_ << "] HandleChat: Response sent successfully" << std::endl;
         }
+        
+        std::cout << "[" << node_id_ << "] HandleChat: Chat session ended, processed " << message_count << " messages" << std::endl;
+        
+        // Call the callback with OK status
+        callback(grpc::Status::OK);
+    } catch (const std::exception& e) {
+        std::cerr << "[" << node_id_ << "] HandleChat: Exception: " << e.what() << std::endl;
+        callback(grpc::Status(grpc::StatusCode::INTERNAL, std::string("Exception: ") + e.what()));
+    } catch (...) {
+        std::cerr << "[" << node_id_ << "] HandleChat: Unknown exception" << std::endl;
+        callback(grpc::Status(grpc::StatusCode::INTERNAL, "Unknown exception"));
     }
-    
-    // Call the callback with OK status
-    callback(grpc::Status::OK);
 }
 
 void BasecampServiceImpl::HandleQueryData(
