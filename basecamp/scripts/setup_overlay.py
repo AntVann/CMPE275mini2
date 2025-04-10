@@ -65,7 +65,7 @@ def get_server_command(process_id: str, ip: str, config_path: str) -> List[str]:
             print("Please make sure you have built the project using scripts/build.py")
             sys.exit(1)
 
-    return [server_path, "--address", f"{ip}:{port}"]
+    return [server_path, "--address", f"{ip}:{port}", "--node-id", process_id]
 
 
 def get_client_command(
