@@ -12,6 +12,7 @@ import argparse
 import time
 import random
 import string
+import threading
 
 # Add the Python client directory to the path
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -176,10 +177,22 @@ def test_chat(server_address, sender_id=None, num_messages=3):
 
     # Define a callback function to handle received messages
     def receive_callback(message):
-        print(f"Received message: {message}")
+        print(f"Received message from {message.sender_id}: {message.content}")
 
     # Define a function to generate messages
     messages_sent = 0
+    responses_received = 0
+
+    # Create an event to signal when we've received responses
+    response_event = threading.Event()
+
+    # Override the callback to count responses
+    def counting_callback(message):
+        nonlocal responses_received
+        print(f"Received message from {message.sender_id}: {message.content}")
+        responses_received += 1
+        if responses_received >= messages_sent:
+            response_event.set()
 
     def get_next_message():
         nonlocal messages_sent
@@ -194,14 +207,21 @@ def test_chat(server_address, sender_id=None, num_messages=3):
 
     try:
         # Start the chat
-        success = client.start_chat(sender_id, receive_callback, get_next_message)
+        success = client.start_chat(sender_id, counting_callback, get_next_message)
 
         # Print the result
         if success:
             print(f"Successfully started chat for {sender_id}")
             print(f"Sent {messages_sent} messages")
-            print("Waiting for responses for 5 seconds...")
-            time.sleep(5)
+            print("Waiting for responses for 10 seconds...")
+
+            # Wait for responses with a timeout
+            response_event.wait(10)
+
+            if responses_received > 0:
+                print(f"Received {responses_received} responses")
+            else:
+                print("No responses received within the timeout period")
         else:
             print(f"Failed to start chat for {sender_id}")
 
